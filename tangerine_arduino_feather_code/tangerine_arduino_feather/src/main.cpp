@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <SPI.h>
 #include <Ethernet.h>
+#include <PubSubClient.h>
 #include <Adafruit_NeoPixel.h>
 #include <FreeRTOS.h>
 #include <task.h>
@@ -11,8 +12,30 @@
 #define NUM_PIXELS          1
 Adafruit_NeoPixel pixel(NUM_PIXELS, NEOPIXEL_PIN, NEO_GRB + NEO_KHZ800);
 
-// W5500 CS pin (Feather SPI0 default: SCK=18, MOSI=19, MISO=20)
-#define SPI_CS_PIN  10
+#define SPI_CS_PIN   10
+#define MQTT_PORT    1883
+
+static IPAddress mqttBrokerIP(192, 168, 100, 1);
+
+EthernetClient ethClient;
+PubSubClient   mqtt(ethClient);
+
+void testMqttCallback(char* topic, byte* payload, unsigned int length) {
+    if (length == 0) return;
+    Serial.printf("[MQTT] Received on %s: 0x%02X\n", topic, payload[0]);
+
+    if (payload[0] == 0x0F) {
+        // Blink red 3 times
+        for (int i = 0; i < 3; i++) {
+            pixel.setPixelColor(0, pixel.Color(150, 0, 0));
+            pixel.show();
+            delay(200);
+            pixel.setPixelColor(0, 0);
+            pixel.show();
+            delay(200);
+        }
+    }
+}
 
 // Heartbeat task — blinks blue every second and prints link status
 void vHeartbeatTask(void *pvParameters) {
@@ -24,10 +47,9 @@ void vHeartbeatTask(void *pvParameters) {
         px->setPixelColor(0, 0);
         px->show();
 
-        Serial.printf("[HEARTBEAT] Link: %s\n",
-            Ethernet.linkStatus() == LinkON ? "UP" : "DOWN");
+        mqtt.loop();
 
-        vTaskDelay(pdMS_TO_TICKS(2000));
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
 
@@ -87,6 +109,17 @@ void setup() {
     }
 
     Serial.printf("[MAIN] IP: %d.%d.%d.%d\n", ip[0], ip[1], ip[2], ip[3]);
+
+    mqtt.setServer(mqttBrokerIP, MQTT_PORT);
+    mqtt.setCallback(testMqttCallback);
+    if (mqtt.connect("tangerine-test")) {
+        Serial.println("[MQTT] Connected!");
+        mqtt.publish("tangerine/status", "hello from board");
+        mqtt.subscribe("device/command");
+        Serial.println("[MQTT] Subscribed to device/command");
+    } else {
+        Serial.printf("[MQTT] Failed, rc=%d\n", mqtt.state());
+    }
 
     xTaskCreate(vHeartbeatTask, "heartbeat", 256, &pixel, 1, NULL);
 }
