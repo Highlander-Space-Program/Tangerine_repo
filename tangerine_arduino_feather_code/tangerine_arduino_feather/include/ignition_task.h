@@ -15,10 +15,18 @@
 // Igniter fire pin
 #define IGNITER_FIRE_PIN 13
 
-// TODO: Set these to the actual calibrated PWM duty cycles for your servos
-// analogWriteResolution(8) + analogWriteFreq(1000) -> 0-255 maps to 0-1ms period
-#define RUN_VALVE_OPEN_DC  200  // duty cycle for fully open
-#define RUN_VALVE_CLOSE_DC 50   // duty cycle for fully closed
+// Servo PWM — 50Hz (20ms period), 16-bit resolution (0-65535)
+// DS3235 practical range per team: 600-2400μs (spec says 500-2500 but slightly off)
+// duty = pulse_us * 65536 / 20000
+#define SERVO_US_TO_DC(us)    ((uint32_t)(us) * 65536 / 20000)
+
+#define SERVO_FULL_CW_DC      SERVO_US_TO_DC(800)   // 2621 — full clockwise (empirical, 600 too low)
+#define SERVO_NEUTRAL_DC      SERVO_US_TO_DC(1500)  // 4915 — neutral / 135°
+#define SERVO_FULL_CCW_DC     SERVO_US_TO_DC(2400)  // 7864 — full counter-clockwise
+
+// TODO: verify open/close direction matches physical valve orientation
+#define RUN_VALVE_OPEN_DC     SERVO_FULL_CCW_DC
+#define RUN_VALVE_CLOSE_DC    SERVO_FULL_CW_DC
 
 
 void vtangerine_auto_ignition_task(void *pvParameters);

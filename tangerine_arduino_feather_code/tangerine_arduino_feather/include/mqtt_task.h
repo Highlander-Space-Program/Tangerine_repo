@@ -24,9 +24,9 @@
 // Servo 1 (fill valve) — servos 2 & 3 (run valves) defined in ignition_task.h
 #define SERVO_1_PIN     1
 
-// TODO: calibrate these for servo 1 (fill valve)
-#define FILL_VALVE_OPEN_DC  200
-#define FILL_VALVE_CLOSE_DC 50
+// TODO: verify open/close direction matches physical fill valve orientation
+#define FILL_VALVE_OPEN_DC    SERVO_FULL_CCW_DC
+#define FILL_VALVE_CLOSE_DC   SERVO_FULL_CW_DC
 
 // Network config — TODO: update for your actual network
 #define MQTT_CLIENT_ID   "tangerine-gic-01"

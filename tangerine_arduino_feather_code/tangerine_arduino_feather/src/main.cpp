@@ -43,9 +43,13 @@ void setup() {
         delay(200);
     }
 
-    // Servo PWM
-    analogWriteResolution(8);
-    analogWriteFreq(1000);
+    // Servo PWM — 50Hz standard servo frequency, 16-bit resolution
+    analogWriteResolution(16);
+    analogWriteFreq(50);
+
+    // Run valve pins — start LOW (safe/closed)
+    pinMode(SERVO_2_PIN, OUTPUT); digitalWrite(SERVO_2_PIN, LOW);
+    pinMode(SERVO_3_PIN, OUTPUT); digitalWrite(SERVO_3_PIN, LOW);
 
     // Igniter fire pin — starts LOW (safe)
     pinMode(IGNITER_FIRE_PIN, OUTPUT);
