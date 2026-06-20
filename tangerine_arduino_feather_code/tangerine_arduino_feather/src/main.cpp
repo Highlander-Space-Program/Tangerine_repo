@@ -35,7 +35,7 @@ void setup() {
     Serial.begin(115200);
     delay(1500);
 
-    // NeoPixel power rail
+    // NeoPixel power rail — same order as the old working code
     pinMode(NEOPIXEL_POWER_PIN, OUTPUT);
     digitalWrite(NEOPIXEL_POWER_PIN, HIGH);
     delay(10);
@@ -52,7 +52,14 @@ void setup() {
         delay(200);
     }
 
-    // Ethernet init — SPI0 defaults (no remapping needed for FeatherWing header)
+    // Deselect the on-board MCP2515 CAN controller — shares SPI bus with W5500 FeatherWing.
+    // Floating CS corrupts every SPI transaction to the W5500.
+    pinMode(9,  OUTPUT); digitalWrite(9,  HIGH); // CAN CS — deselect
+    pinMode(16, OUTPUT); digitalWrite(16, HIGH); // CAN STANDBY
+
+    // adafruit_feather_can board definition sets SPI defaults to GPIO 14/15/8
+    // (the Feather CAN Bus header routes to SPI1 pins, but the board variant
+    // maps the SPI object to those pins so Ethernet library works without changes)
     Serial.println("[MAIN] SPI begin...");
     SPI.begin();
     Serial.println("[MAIN] Ethernet init...");
@@ -63,10 +70,23 @@ void setup() {
     static IPAddress gw (192, 168, 100,  1);
     static IPAddress sn (255, 255, 255,  0);
     Ethernet.begin(mac, ip, gw, gw, sn);
-    delay(500); // give W5500 time to negotiate link
+
+    auto hw = Ethernet.hardwareStatus();
+    if (hw == EthernetNoHardware) Serial.println("[MAIN] W5500: NOT FOUND (SPI failure)");
+    else if (hw == EthernetW5500) Serial.println("[MAIN] W5500: found OK");
+    else                          Serial.printf("[MAIN] W5500: hardware code %d\n", hw);
+
+    Serial.println("[MAIN] Waiting for link...");
+    for (int i = 0; i < 10; i++) {
+        delay(500);
+        if (Ethernet.linkStatus() == LinkON) {
+            Serial.println("[MAIN] Link: UP");
+            break;
+        }
+        Serial.printf("[MAIN] Link: DOWN (%d/10)\n", i + 1);
+    }
 
     Serial.printf("[MAIN] IP: %d.%d.%d.%d\n", ip[0], ip[1], ip[2], ip[3]);
-    Serial.printf("[MAIN] Link: %s\n", Ethernet.linkStatus() == LinkON ? "UP" : "DOWN");
 
     xTaskCreate(vHeartbeatTask, "heartbeat", 256, &pixel, 1, NULL);
 }
