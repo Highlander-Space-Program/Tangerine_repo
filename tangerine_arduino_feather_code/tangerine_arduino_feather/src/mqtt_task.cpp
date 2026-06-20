@@ -10,6 +10,8 @@ static PubSubClient   mqtt(ethClient);
 QueueHandle_t     xmqtt_cmd_queue = NULL;
 SemaphoreHandle_t xmqtt_mutex     = NULL;
 
+volatile uint8_t g_breakwire_publish_byte = 0;
+
 TaskHandle_t vmqtt_task_handle              = NULL;
 TaskHandle_t vmqtt_cmd_processor_task_handle = NULL;
 
@@ -66,6 +68,14 @@ void vmqtt_task(void *pvParameters) {
         // can't overlap with it (we're protecting the mqtt object)
         if (xSemaphoreTake(xmqtt_mutex, pdMS_TO_TICKS(20)) == pdTRUE) {
             mqtt.loop();
+
+            // Publish breakwire status if breakwire_task flagged an update
+            uint8_t bw = g_breakwire_publish_byte;
+            if (bw != 0) {
+                g_breakwire_publish_byte = 0;
+                mqtt.publish(MQTT_BREAKWIRE_TOPIC, &bw, 1);
+            }
+
             xSemaphoreGive(xmqtt_mutex);
         }
 
@@ -97,12 +107,10 @@ DAQ server (server/mqtt.py) subscribes to this topic and updates the controls pa
 Separate from publishStatus() because the DAQ server reads a different topic for breakwire.
 */
 void publishBreakwire(const char* status) {
-    if (!mqtt.connected()) return;
-
-    if (xSemaphoreTake(xmqtt_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
-        mqtt.publish(MQTT_BREAKWIRE_TOPIC, status);
-        xSemaphoreGive(xmqtt_mutex);
-    }
+    // Just set the flag — vmqtt_task publishes it on its next loop iteration.
+    // This avoids calling mqtt.publish() from the breakwire task, which caused
+    // mutex contention with mqtt.loop() and intermittent disconnects.
+    g_breakwire_publish_byte = (strcmp(status, "connected") == 0) ? 0x10 : 0x11;
 }
 
 
@@ -250,7 +258,7 @@ void vmqtt_cmd_processor_task(void *pvParameters) {
                 break;
 
                 case GUI_MSG_LED_MEDIUM:
-                    xTaskNotify(xtick_led2_handle, (uint32_t)LED2_BLINK_MEDIUM, eSetValueWithOverwrite);
+                    xTaskNotify(xtick_led2_handle, (uint32_t)LED2_BLINK_BLUE, eSetValueWithOverwrite);
                 break;
 
                 default:

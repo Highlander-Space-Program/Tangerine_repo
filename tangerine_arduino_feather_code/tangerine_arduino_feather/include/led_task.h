@@ -10,7 +10,8 @@ typedef enum {
     LED2_OFF,
     LED2_BLINK_SLOW,
     LED2_BLINK_MEDIUM,
-    LED2_BLINK_FAST
+    LED2_BLINK_FAST,
+    LED2_BLINK_BLUE   // used for ping response
 } led2_state_t;
 
 //No CAN cmd to LED state LUT needed anymore

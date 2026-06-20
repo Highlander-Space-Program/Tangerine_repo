@@ -18,8 +18,8 @@ void vtick_led2(void *pvParameters) {
     //Casting the void pointer into an Adafruit_NeoPixel pointer
     Adafruit_NeoPixel* pixelPtr = (Adafruit_NeoPixel*)pvParameters; 
 
-    //Set green as the color for this task
-    const uint32_t COLOR_ON  = pixelPtr->Color(0, 150, 0); 
+    const uint32_t COLOR_ON   = pixelPtr->Color(0, 150, 0);
+    const uint32_t COLOR_BLUE = pixelPtr->Color(0, 0, 150);
 
     // LED starts OFF
     pixelPtr->setPixelColor(0, 0);
@@ -94,6 +94,15 @@ void vtick_led2(void *pvParameters) {
                 pixelPtr->setPixelColor(0, pixel_on ? COLOR_ON : 0);
                 pixelPtr->show();
                 if (xTaskNotifyWait(0, 0xFFFFFFFF, &cmd_from_notif, pdMS_TO_TICKS(100)) == pdTRUE) {
+                    led2_state = (led2_state_t)cmd_from_notif;
+                }
+            break;
+
+            case LED2_BLINK_BLUE:
+                pixel_on = !pixel_on;
+                pixelPtr->setPixelColor(0, pixel_on ? COLOR_BLUE : 0);
+                pixelPtr->show();
+                if (xTaskNotifyWait(0, 0xFFFFFFFF, &cmd_from_notif, pdMS_TO_TICKS(400)) == pdTRUE) {
                     led2_state = (led2_state_t)cmd_from_notif;
                 }
             break;

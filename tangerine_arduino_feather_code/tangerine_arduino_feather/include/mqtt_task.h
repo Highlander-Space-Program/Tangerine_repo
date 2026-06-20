@@ -102,6 +102,8 @@ void vmqtt_cmd_processor_task(void *pvParameters);
 // Thread-safe via xmqtt_mutex — safe to call from any task
 void publishStatus(const char* msg);
 
-// Publishes breakwire state to MQTT_BREAKWIRE_TOPIC ("broken" or "connected")
-// DAQ server reads this topic to update the controls page breakwire indicator
+// Breakwire status for vmqtt_task to publish — set by breakwire_task, read by vmqtt_task.
+// 0 = no update pending, 0x10 = connected, 0x11 = broken
+extern volatile uint8_t g_breakwire_publish_byte;
+
 void publishBreakwire(const char* status);
