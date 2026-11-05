@@ -20,13 +20,16 @@
 // duty = pulse_us * 65536 / 20000
 #define SERVO_US_TO_DC(us)    ((uint32_t)(us) * 65536 / 20000)
 
-#define SERVO_FULL_CW_DC      SERVO_US_TO_DC(800)   // 2621 — full clockwise (empirical, 600 too low)
 #define SERVO_NEUTRAL_DC      SERVO_US_TO_DC(1500)  // 4915 — neutral / 135°
-#define SERVO_FULL_CCW_DC     SERVO_US_TO_DC(2400)  // 7864 — full counter-clockwise
 
-// TODO: verify open/close direction matches physical valve orientation
-#define RUN_VALVE_OPEN_DC     SERVO_FULL_CCW_DC
-#define RUN_VALVE_CLOSE_DC    SERVO_FULL_CW_DC
+// Pulled in from extremes to avoid stalling against mechanical stops (causes overheating).
+// Calibrate these: increase OPEN_US toward 2400 / decrease CLOSE_US toward 600
+// until valve just reaches fully open/closed, then back off ~50-100us.
+#define RUN_VALVE_OPEN_US     2000
+#define RUN_VALVE_CLOSE_US    1000
+
+#define RUN_VALVE_OPEN_DC     SERVO_US_TO_DC(RUN_VALVE_OPEN_US)
+#define RUN_VALVE_CLOSE_DC    SERVO_US_TO_DC(RUN_VALVE_CLOSE_US)
 
 
 void vtangerine_auto_ignition_task(void *pvParameters);

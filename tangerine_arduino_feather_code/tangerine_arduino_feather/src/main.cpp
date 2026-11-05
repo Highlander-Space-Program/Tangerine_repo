@@ -31,7 +31,7 @@ void setup() {
     digitalWrite(NEOPIXEL_POWER_PIN, HIGH);
     delay(10);
     pixel.begin();
-    pixel.setBrightness(20);
+    pixel.setBrightness(80);
 
     // Blink green 3 times — setup() is alive
     for (int i = 0; i < 3; i++) {
@@ -67,8 +67,8 @@ void setup() {
     Ethernet.init(SPI_CS_PIN);
 
     static byte      mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
-    static IPAddress ip (192, 168, 100, 50);
-    static IPAddress gw (192, 168, 100,  1);
+    static IPAddress ip (10,10,10,30); //for DAQ setup (10,10,10,30)
+    static IPAddress gw (10,10,10,1);  //for DAQ setup (10,10,10,1) May have to change both for docker setup
     static IPAddress sn (255, 255, 255,  0);
     Ethernet.begin(mac, ip, gw, gw, sn);
 

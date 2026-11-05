@@ -1,7 +1,9 @@
 #include "mqtt_task.h"
 
 // MQTT broker IP — PC's ethernet adapter on the direct-link network
-static IPAddress mqttBrokerIP(192, 168, 100, 1);
+static IPAddress mqttBrokerIP(10, 10, 10, 10); 
+//^for DAQ system (10,10,10,10)
+//^may have to change when testing with Docker setup
 
 // PubSubClient uses an EthernetClient under the hood
 static EthernetClient ethClient;
