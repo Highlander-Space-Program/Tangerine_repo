@@ -8,10 +8,13 @@
 #include "system_safety_flags.h"
 #include "breakwire_task.h"
 
+#include <Servo.h>
+
 // Run valve servo pins (servos 2 & 3, opened simultaneously as run valves)
 #define SERVO_2_PIN 0
 #define SERVO_3_PIN 4
 
+extern Servo servo1, servo2, servo3;
 // Igniter fire pin
 #define IGNITER_FIRE_PIN 13
 

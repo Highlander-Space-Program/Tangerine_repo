@@ -185,7 +185,7 @@ void vmqtt_cmd_processor_task(void *pvParameters) {
 
                 case GUI_MSG_OPEN_SERVO_1:
                     if (safetyFlags & SAFETY_FLAGS_MASK_SERVOS_ARMED) {
-                        analogWrite(SERVO_1_PIN, FILL_VALVE_OPEN_DC);
+                        servo1.writeMicroseconds(FILL_VALVE_OPEN_US);
                         Serial.printf("[CMD] Servo 1 (fill valve) OPEN\n");
                     } else {
                         Serial.printf("[CMD] REJECTED: Servo 1 open — servos not armed\n");
@@ -194,7 +194,7 @@ void vmqtt_cmd_processor_task(void *pvParameters) {
 
                 case GUI_MSG_CLOSE_SERVO_1:
                     if (safetyFlags & SAFETY_FLAGS_MASK_SERVOS_ARMED) {
-                        analogWrite(SERVO_1_PIN, FILL_VALVE_CLOSE_DC);
+                        servo1.writeMicroseconds(FILL_VALVE_CLOSE_US);
                         Serial.printf("[CMD] Servo 1 (fill valve) CLOSE\n");
                     } else {
                         Serial.printf("[CMD] REJECTED: Servo 1 close — servos not armed\n");
@@ -203,7 +203,7 @@ void vmqtt_cmd_processor_task(void *pvParameters) {
 
                 case GUI_MSG_OPEN_SERVO_2:
                     if (safetyFlags & SAFETY_FLAGS_MASK_SERVOS_ARMED) {
-                        analogWrite(SERVO_2_PIN, RUN_VALVE_OPEN_DC);
+                        servo2.writeMicroseconds(RUN_VALVE_OPEN_US);
                         Serial.printf("[CMD] Servo 2 (run valve) OPEN\n");
                     } else {
                         Serial.printf("[CMD] REJECTED: Servo 2 open — servos not armed\n");
@@ -212,7 +212,7 @@ void vmqtt_cmd_processor_task(void *pvParameters) {
 
                 case GUI_MSG_CLOSE_SERVO_2:
                     if (safetyFlags & SAFETY_FLAGS_MASK_SERVOS_ARMED) {
-                        analogWrite(SERVO_2_PIN, RUN_VALVE_CLOSE_DC);
+                        servo2.writeMicroseconds(RUN_VALVE_CLOSE_US);
                         Serial.printf("[CMD] Servo 2 (run valve) CLOSE\n");
                     } else {
                         Serial.printf("[CMD] REJECTED: Servo 2 close — servos not armed\n");
@@ -221,7 +221,7 @@ void vmqtt_cmd_processor_task(void *pvParameters) {
 
                 case GUI_MSG_OPEN_SERVO_3:
                     if (safetyFlags & SAFETY_FLAGS_MASK_SERVOS_ARMED) {
-                        analogWrite(SERVO_3_PIN, RUN_VALVE_OPEN_DC);
+                        servo3.writeMicroseconds(RUN_VALVE_OPEN_US);
                         Serial.printf("[CMD] Servo 3 (run valve) OPEN\n");
                     } else {
                         Serial.printf("[CMD] REJECTED: Servo 3 open — servos not armed\n");
@@ -230,7 +230,7 @@ void vmqtt_cmd_processor_task(void *pvParameters) {
 
                 case GUI_MSG_CLOSE_SERVO_3:
                     if (safetyFlags & SAFETY_FLAGS_MASK_SERVOS_ARMED) {
-                        analogWrite(SERVO_3_PIN, RUN_VALVE_CLOSE_DC);
+                        servo3.writeMicroseconds(RUN_VALVE_CLOSE_US);
                         Serial.printf("[CMD] Servo 3 (run valve) CLOSE\n");
                     } else {
                         Serial.printf("[CMD] REJECTED: Servo 3 close — servos not armed\n");

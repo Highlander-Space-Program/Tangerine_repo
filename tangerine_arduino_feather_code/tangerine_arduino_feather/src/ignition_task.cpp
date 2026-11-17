@@ -2,18 +2,19 @@
 
 TaskHandle_t xtangerine_auto_ignition_task_handle = NULL;
 
+Servo servo1, servo2, servo3;
 
 // Opens servos 2 & 3 simultaneously (run valves)
 // NOTE: RUN_VALVE_OPEN_DC needs to be calibrated to the actual servo open angle
 void OPEN_TANGERINE_RUN_VALVES(void) {
-    analogWrite(SERVO_2_PIN, RUN_VALVE_OPEN_DC);
-    analogWrite(SERVO_3_PIN, RUN_VALVE_OPEN_DC);
+    servo2.writeMicroseconds(RUN_VALVE_OPEN_US);
+    servo3.writeMicroseconds(RUN_VALVE_OPEN_US);
 }
 
 // Closes servos 2 & 3 simultaneously (run valves)
 void CLOSE_TANGERINE_RUN_VALVES(void) {
-    analogWrite(SERVO_2_PIN, RUN_VALVE_CLOSE_DC);
-    analogWrite(SERVO_3_PIN, RUN_VALVE_CLOSE_DC);
+    servo2.writeMicroseconds(RUN_VALVE_CLOSE_US);
+    servo3.writeMicroseconds(RUN_VALVE_CLOSE_US);
 }
 
 // Sets IGNITER_FIRE_PIN HIGH — fires the igniter e-match

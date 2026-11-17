@@ -25,7 +25,7 @@ EventGroupHandle_t xsystem_safety_flags_handle   = NULL;
 void setup() {
     Serial.begin(115200);
     delay(1500);
-
+    
     // NeoPixel power rail
     pinMode(NEOPIXEL_POWER_PIN, OUTPUT);
     digitalWrite(NEOPIXEL_POWER_PIN, HIGH);
@@ -43,13 +43,12 @@ void setup() {
         delay(200);
     }
 
-    // Servo PWM — 50Hz standard servo frequency, 16-bit resolution
-    analogWriteResolution(16);
-    analogWriteFreq(50);
-
-    // Run valve pins — start LOW (safe/closed)
-    pinMode(SERVO_2_PIN, OUTPUT); digitalWrite(SERVO_2_PIN, LOW);
-    pinMode(SERVO_3_PIN, OUTPUT); digitalWrite(SERVO_3_PIN, LOW);
+    servo1.attach(SERVO_1_PIN, 600, 2400);
+    servo2.attach(SERVO_2_PIN, 600, 2400);
+    servo3.attach(SERVO_3_PIN, 600, 2400);
+    servo1.writeMicroseconds(FILL_VALVE_CLOSE_US);
+    servo2.writeMicroseconds(RUN_VALVE_CLOSE_US);
+    servo3.writeMicroseconds(RUN_VALVE_CLOSE_US);
 
     // Igniter fire pin — starts LOW (safe)
     pinMode(IGNITER_FIRE_PIN, OUTPUT);
@@ -106,6 +105,8 @@ void setup() {
     xTaskCreate(vtangerine_auto_ignition_task, "ignition",        512, NULL,   3, &xtangerine_auto_ignition_task_handle);
     xTaskCreate(vmqtt_task,                    "mqtt",            512, NULL,   2, &vmqtt_task_handle);
     xTaskCreate(vmqtt_cmd_processor_task,      "cmd_processing",  512, NULL,   2, &vmqtt_cmd_processor_task_handle);
+
+    Serial.printf("GPIO4 function: %d\n", gpio_get_function(4));
 }
 
 
