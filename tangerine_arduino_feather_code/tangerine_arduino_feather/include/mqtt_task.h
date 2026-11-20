@@ -25,8 +25,8 @@
 #define SERVO_1_PIN     1
 
 // Pulled in from extremes to avoid stalling against mechanical stops (causes overheating).
-#define FILL_VALVE_OPEN_US     2000
-#define FILL_VALVE_CLOSE_US    1000
+#define FILL_VALVE_OPEN_US     1830
+#define FILL_VALVE_CLOSE_US    1200
 
 // TODO: verify open/close direction matches physical fill valve orientation
 #define FILL_VALVE_OPEN_DC    SERVO_US_TO_DC(FILL_VALVE_OPEN_US)
@@ -43,6 +43,7 @@
 #define MQTT_CMD_TOPIC       "device/command"
 #define MQTT_STATUS_TOPIC    "tangerine/status"
 #define MQTT_BREAKWIRE_TOPIC "device/breakwire"
+
 
 // GUI message command enum — single byte sent over MQTT from the GUI to the board
 typedef enum {
@@ -102,8 +103,19 @@ void vmqtt_task(void *pvParameters);
 // (equivalent of vprocess_can_rx_msg + all class handlers from OPC main.c)
 void vmqtt_cmd_processor_task(void *pvParameters);
 
-// Publishes a status string to MQTT_STATUS_TOPIC
-// Thread-safe via xmqtt_mutex — safe to call from any task
+// Outgoing status messages — filled by publishStatus() from any task, drained by vmqtt_task.
+// Each queue slot holds one null-terminated string, longer strings are cut to fit.
+#define MQTT_STATUS_MSG_MAX_LEN  48
+#define MQTT_STATUS_QUEUE_LEN    16
+
+typedef struct {
+    char text[MQTT_STATUS_MSG_MAX_LEN];
+} mqtt_status_msg_t;
+
+extern QueueHandle_t xmqtt_status_queue;
+
+// Queues a status string for vmqtt_task to publish to MQTT_STATUS_TOPIC.
+// Safe to call from any task — it never touches the mqtt object itself.
 void publishStatus(const char* msg);
 
 // Breakwire status for vmqtt_task to publish — set by breakwire_task, read by vmqtt_task.

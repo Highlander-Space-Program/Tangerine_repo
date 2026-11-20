@@ -98,6 +98,7 @@ void setup() {
     xbreakwire_event_group_handle = xEventGroupCreate();
     xmqtt_cmd_queue               = xQueueCreate(10, sizeof(uint8_t));
     xmqtt_mutex                   = xSemaphoreCreateMutex();
+    xmqtt_status_queue            = xQueueCreate(MQTT_STATUS_QUEUE_LEN, sizeof(mqtt_status_msg_t));
 
     // Create tasks
     xTaskCreate(vtick_led2,                    "led2",            512, &pixel, 2, &xtick_led2_handle);

@@ -11,6 +11,7 @@ static PubSubClient   mqtt(ethClient);
 
 QueueHandle_t     xmqtt_cmd_queue = NULL;
 SemaphoreHandle_t xmqtt_mutex     = NULL;
+QueueHandle_t     xmqtt_status_queue = NULL;
 
 volatile uint8_t g_breakwire_publish_byte = 0;
 
@@ -78,6 +79,18 @@ void vmqtt_task(void *pvParameters) {
                 mqtt.publish(MQTT_BREAKWIRE_TOPIC, &bw, 1);
             }
 
+            // Publish any status messages queued by publishStatus().
+            // Peek first and only remove the message once it has actually been sent,
+            // so a message isn't lost if the connection drops mid-way.
+            mqtt_status_msg_t status_msg;
+            while (xQueuePeek(xmqtt_status_queue, &status_msg, 0) == pdTRUE) {
+                if (!mqtt.publish(MQTT_STATUS_TOPIC, status_msg.text)) {
+                    Serial.printf("[MQTT] Status publish failed, will retry: %s\n", status_msg.text);
+                    break; // leave it in the queue, try again next loop
+                }
+                xQueueReceive(xmqtt_status_queue, &status_msg, 0); // sent — remove it
+            }
+
             xSemaphoreGive(xmqtt_mutex);
         }
 
@@ -94,11 +107,14 @@ Thread-safe — takes xMqttMutex before calling mqtt.publish() so this can be ca
 from any task (breakwire_task, command processor, etc.).
 */
 void publishStatus(const char* msg) {
-    if (!mqtt.connected()) return;
+    if (xmqtt_status_queue == NULL) return; // queue not created yet
 
-    if (xSemaphoreTake(xmqtt_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
-        mqtt.publish(MQTT_STATUS_TOPIC, msg);
-        xSemaphoreGive(xmqtt_mutex);
+    mqtt_status_msg_t status_msg;
+    strncpy(status_msg.text, msg, MQTT_STATUS_MSG_MAX_LEN - 1);
+    status_msg.text[MQTT_STATUS_MSG_MAX_LEN - 1] = '\0'; // strncpy doesn't terminate if msg is too long
+
+    if (xQueueSend(xmqtt_status_queue, &status_msg, 0) != pdTRUE) {
+        Serial.printf("[MQTT] Status queue full, dropped: %s\n", status_msg.text);
     }
 }
 
@@ -132,6 +148,10 @@ void vmqtt_cmd_processor_task(void *pvParameters) {
             Serial.printf("[CMD] Received cmd: 0x%02X\n", cmd);
 
             EventBits_t safetyFlags = xEventGroupGetBits(xsystem_safety_flags_handle);
+
+            // Result reported back to the GUI once the command has been handled.
+            // Stays "OK" unless a case below rejects the command.
+            const char* result = "OK";
 
             switch ((gui_msg_t)cmd) {
 
@@ -189,6 +209,7 @@ void vmqtt_cmd_processor_task(void *pvParameters) {
                         Serial.printf("[CMD] Servo 1 (fill valve) OPEN\n");
                     } else {
                         Serial.printf("[CMD] REJECTED: Servo 1 open — servos not armed\n");
+                        result = "REJECTED_SERVOS_NOT_ARMED";
                     }
                 break;
 
@@ -198,6 +219,7 @@ void vmqtt_cmd_processor_task(void *pvParameters) {
                         Serial.printf("[CMD] Servo 1 (fill valve) CLOSE\n");
                     } else {
                         Serial.printf("[CMD] REJECTED: Servo 1 close — servos not armed\n");
+                        result = "REJECTED_SERVOS_NOT_ARMED";
                     }
                 break;
 
@@ -207,6 +229,7 @@ void vmqtt_cmd_processor_task(void *pvParameters) {
                         Serial.printf("[CMD] Servo 2 (run valve) OPEN\n");
                     } else {
                         Serial.printf("[CMD] REJECTED: Servo 2 open — servos not armed\n");
+                        result = "REJECTED_SERVOS_NOT_ARMED";
                     }
                 break;
 
@@ -216,6 +239,7 @@ void vmqtt_cmd_processor_task(void *pvParameters) {
                         Serial.printf("[CMD] Servo 2 (run valve) CLOSE\n");
                     } else {
                         Serial.printf("[CMD] REJECTED: Servo 2 close — servos not armed\n");
+                        result = "REJECTED_SERVOS_NOT_ARMED";
                     }
                 break;
 
@@ -225,6 +249,7 @@ void vmqtt_cmd_processor_task(void *pvParameters) {
                         Serial.printf("[CMD] Servo 3 (run valve) OPEN\n");
                     } else {
                         Serial.printf("[CMD] REJECTED: Servo 3 open — servos not armed\n");
+                        result = "REJECTED_SERVOS_NOT_ARMED";
                     }
                 break;
 
@@ -234,6 +259,7 @@ void vmqtt_cmd_processor_task(void *pvParameters) {
                         Serial.printf("[CMD] Servo 3 (run valve) CLOSE\n");
                     } else {
                         Serial.printf("[CMD] REJECTED: Servo 3 close — servos not armed\n");
+                        result = "REJECTED_SERVOS_NOT_ARMED";
                     }
                 break;
 
@@ -245,6 +271,7 @@ void vmqtt_cmd_processor_task(void *pvParameters) {
                         Serial.printf("[CMD] IGNITER FIRED\n");
                     } else {
                         Serial.printf("[CMD] REJECTED: Igniter fire — igniter system not armed\n");
+                        result = "REJECTED_IGNITER_NOT_ARMED";
                     }
                 break;
 
@@ -265,9 +292,15 @@ void vmqtt_cmd_processor_task(void *pvParameters) {
 
                 default:
                     Serial.printf("[CMD] Unknown command: 0x%02X\n", cmd);
+                     result = "UNKNOWN";
                 break;
 
             }//switch
+            // Tell the GUI the command was received and what happened to it,
+            // e.g. "CMD 0x0C OK" or "CMD 0x0C REJECTED_IGNITER_NOT_ARMED"
+            char status_text[MQTT_STATUS_MSG_MAX_LEN];
+            snprintf(status_text, sizeof(status_text), "CMD 0x%02X %s", cmd, result);
+            publishStatus(status_text);
 
         }//if xQueueReceive
 

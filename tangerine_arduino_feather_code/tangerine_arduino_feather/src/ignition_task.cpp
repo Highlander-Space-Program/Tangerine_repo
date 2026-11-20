@@ -1,4 +1,5 @@
 #include "ignition_task.h"
+#include "mqtt_task.h" // for publishStatus()
 
 TaskHandle_t xtangerine_auto_ignition_task_handle = NULL;
 
@@ -98,18 +99,22 @@ void vtangerine_auto_ignition_task(void *pvParameters) {
         */
         EventBits_t safetyFlags = xEventGroupGetBits(xsystem_safety_flags_handle);
 
+        const EventBits_t requiredFlags = SAFETY_FLAGS_MASK_IGNITER_SYSTEM_ARMED | SAFETY_FLAGS_MASK_AUTO_SEQUENCE_ARMED;
+
         if ( (breakwireStatus & BREAKWIRE_IS_BROKEN_MASK) &&
-             (safetyFlags & (SAFETY_FLAGS_MASK_IGNITER_SYSTEM_ARMED | SAFETY_FLAGS_MASK_AUTO_SEQUENCE_ARMED)) ) {
+             ((safetyFlags & requiredFlags) == requiredFlags) ) {
 
             // Both flags still set and breakwire confirmed broken — open the run valves
             Serial.printf("[IGNITION] Checks passed — OPENING RUN VALVES\n");
             OPEN_TANGERINE_RUN_VALVES();
+            publishStatus("AUTO VALVES_OPENED"); // tell the GUI the sequence completed
 
         } else {
             // One or more flags were cleared (aborted) while waiting — safe shutdown
             Serial.printf("[IGNITION] Safety check FAILED (flags cleared?) — aborting, closing run valves\n");
             CLOSE_TANGERINE_RUN_VALVES();
             xEventGroupClearBits(xsystem_safety_flags_handle, SAFETY_FLAGS_MASK_AUTO_SEQUENCE_ARMED);
+            publishStatus("AUTO ABORTED"); // tell the GUI the sequence failed
         }
 
     }//for
