@@ -37,15 +37,26 @@
 #define MQTT_PORT        1883
 
 // Topics — must match the DAQ server (server/mqtt.py ControlPublisher)
-// GUI sends a single gui_msg_t byte to MQTT_CMD_TOPIC
-// Board publishes general status strings to MQTT_STATUS_TOPIC
-// Board publishes breakwire state to MQTT_BREAKWIRE_TOPIC (plain text: "broken" / "connected")
+//
+// GUI sends a JSON command to MQTT_CMD_TOPIC, where "command" is a gui_msg_t number (below):
+//     {"command": 4, "id": 1}
+// Board answers every command on MQTT_RESPONSE_TOPIC, echoing the same id:
+//     {"id": 1, "status": "Ok", "message": ""}
+//     {"id": 1, "status": "Error", "message": "servos not armed"}
+// If the command can't be read at all (bad JSON, missing id) the id is null:
+//     {"id": null, "status": "Error", "message": "invalid json"}
+//
+// Board publishes things that happen on their own (not replies to a command) to MQTT_EVENT_TOPIC:
+//     {"event": "auto_ignition", "status": "Ok", "message": "run valves opened"}
+//     {"event": "auto_ignition", "status": "Error", "message": "aborted, safety flags cleared"}
+//
+// Board publishes breakwire state to MQTT_BREAKWIRE_TOPIC (single byte: 0x10 connected / 0x11 broken)
 #define MQTT_CMD_TOPIC       "device/command"
-#define MQTT_STATUS_TOPIC    "tangerine/status"
+#define MQTT_RESPONSE_TOPIC  "device/command/response"
+#define MQTT_EVENT_TOPIC     "device/event"
 #define MQTT_BREAKWIRE_TOPIC "device/breakwire"
 
-
-// GUI message command enum — single byte sent over MQTT from the GUI to the board
+// GUI message command enum — the "command" number sent over MQTT from the GUI to the board
 typedef enum {
 
   // System flags
@@ -81,19 +92,27 @@ typedef enum {
   GUI_MSG_BRKWIRE_BROKEN        = 0x11
 } gui_msg_t;
 
+// One item in xmqtt_cmd_queue — the command plus the id the GUI sent with it,
+// so the command processor can echo the id back in its response
+typedef struct {
+    uint8_t cmd;   // a gui_msg_t value
+    long    id;
+} mqtt_cmd_t;
+
 
 // Global command queue — filled by mqttCallback, drained by vmqtt_cmd_processor_task
 // (mirrors xcan_rx_queue_handle from OPC main.c)
 extern QueueHandle_t xmqtt_cmd_queue;
 
-// Mutex protecting all mqtt.publish() / mqtt.loop() calls across tasks
+// Mutex protecting all mqtt.publish() / mqtt.loop() calls.
+// Only vmqtt_task uses the mqtt object now — other tasks go through publishStatus() / publishBreakwire()
 extern SemaphoreHandle_t xmqtt_mutex;
 
 extern TaskHandle_t vmqtt_task_handle;
 extern TaskHandle_t vmqtt_cmd_processor_task_handle;
 
 // MQTT callback — called by PubSubClient inside mqtt.loop() when a message arrives
-// Puts the command byte into xmqtt_cmd_queue for vmqtt_cmd_processor_task to handle
+// Parses the JSON command and puts it into xmqtt_cmd_queue for vmqtt_cmd_processor_task to handle
 void mqttCallback(char* topic, byte* payload, unsigned int length);
 
 // Handles MQTT connection, reconnection, and calls mqtt.loop() every 10ms
@@ -104,19 +123,20 @@ void vmqtt_task(void *pvParameters);
 void vmqtt_cmd_processor_task(void *pvParameters);
 
 // Outgoing status messages — filled by publishStatus() from any task, drained by vmqtt_task.
-// Each queue slot holds one null-terminated string, longer strings are cut to fit.
-#define MQTT_STATUS_MSG_MAX_LEN  48
+// Each queue slot holds the topic and one null-terminated string, longer strings are cut to fit.
+#define MQTT_STATUS_MSG_MAX_LEN  128
 #define MQTT_STATUS_QUEUE_LEN    16
 
 typedef struct {
+    const char* topic; // always one of the MQTT_*_TOPIC string constants
     char text[MQTT_STATUS_MSG_MAX_LEN];
 } mqtt_status_msg_t;
 
 extern QueueHandle_t xmqtt_status_queue;
 
-// Queues a status string for vmqtt_task to publish to MQTT_STATUS_TOPIC.
+// Queues a message for vmqtt_task to publish on the given topic.
 // Safe to call from any task — it never touches the mqtt object itself.
-void publishStatus(const char* msg);
+void publishStatus(const char* topic, const char* msg);
 
 // Breakwire status for vmqtt_task to publish — set by breakwire_task, read by vmqtt_task.
 // 0 = no update pending, 0x10 = connected, 0x11 = broken

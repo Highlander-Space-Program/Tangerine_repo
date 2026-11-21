@@ -107,18 +107,16 @@ void vtangerine_auto_ignition_task(void *pvParameters) {
             // Both flags still set and breakwire confirmed broken — open the run valves
             Serial.printf("[IGNITION] Checks passed — OPENING RUN VALVES\n");
             OPEN_TANGERINE_RUN_VALVES();
-            publishStatus("AUTO VALVES_OPENED"); // tell the GUI the sequence completed
+            publishStatus(MQTT_EVENT_TOPIC, "{\"event\":\"auto_ignition\",\"status\":\"Ok\",\"message\":\"run valves opened\"}");
 
         } else {
             // One or more flags were cleared (aborted) while waiting — safe shutdown
             Serial.printf("[IGNITION] Safety check FAILED (flags cleared?) — aborting, closing run valves\n");
             CLOSE_TANGERINE_RUN_VALVES();
             xEventGroupClearBits(xsystem_safety_flags_handle, SAFETY_FLAGS_MASK_AUTO_SEQUENCE_ARMED);
-            publishStatus("AUTO ABORTED"); // tell the GUI the sequence failed
+            publishStatus(MQTT_EVENT_TOPIC, "{\"event\":\"auto_ignition\",\"status\":\"Error\",\"message\":\"aborted, safety flags cleared\"}");
         }
 
     }//for
 
 }//task
-
-

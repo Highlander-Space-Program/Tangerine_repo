@@ -96,16 +96,16 @@ void setup() {
     // Create event groups, queue, and mutex before tasks that use them
     xsystem_safety_flags_handle   = xEventGroupCreate();
     xbreakwire_event_group_handle = xEventGroupCreate();
-    xmqtt_cmd_queue               = xQueueCreate(10, sizeof(uint8_t));
-    xmqtt_mutex                   = xSemaphoreCreateMutex();
+    xmqtt_cmd_queue               = xQueueCreate(10, sizeof(mqtt_cmd_t));
     xmqtt_status_queue            = xQueueCreate(MQTT_STATUS_QUEUE_LEN, sizeof(mqtt_status_msg_t));
+    xmqtt_mutex                   = xSemaphoreCreateMutex();
 
     // Create tasks
     xTaskCreate(vtick_led2,                    "led2",            512, &pixel, 2, &xtick_led2_handle);
     xTaskCreate(vcheck_breakwire_task,         "breakwire",       512, NULL,   3, &xcheck_breakwire_task_handle);
     xTaskCreate(vtangerine_auto_ignition_task, "ignition",        512, NULL,   3, &xtangerine_auto_ignition_task_handle);
-    xTaskCreate(vmqtt_task,                    "mqtt",            512, NULL,   2, &vmqtt_task_handle);
-    xTaskCreate(vmqtt_cmd_processor_task,      "cmd_processing",  512, NULL,   2, &vmqtt_cmd_processor_task_handle);
+    xTaskCreate(vmqtt_task,                    "mqtt",            1024, NULL,  2, &vmqtt_task_handle);
+    xTaskCreate(vmqtt_cmd_processor_task,      "cmd_processing",  1024, NULL,  2, &vmqtt_cmd_processor_task_handle);
 
     Serial.printf("GPIO4 function: %d\n", gpio_get_function(4));
 }

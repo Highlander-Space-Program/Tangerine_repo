@@ -1,4 +1,5 @@
 #include "mqtt_task.h"
+#include <ArduinoJson.h>
 
 // MQTT broker IP — PC's ethernet adapter on the direct-link network
 static IPAddress mqttBrokerIP(10, 10, 10, 10); 
@@ -9,9 +10,9 @@ static IPAddress mqttBrokerIP(10, 10, 10, 10);
 static EthernetClient ethClient;
 static PubSubClient   mqtt(ethClient);
 
-QueueHandle_t     xmqtt_cmd_queue = NULL;
-SemaphoreHandle_t xmqtt_mutex     = NULL;
+QueueHandle_t     xmqtt_cmd_queue    = NULL;
 QueueHandle_t     xmqtt_status_queue = NULL;
+SemaphoreHandle_t xmqtt_mutex        = NULL;
 
 volatile uint8_t g_breakwire_publish_byte = 0;
 
@@ -20,21 +21,69 @@ TaskHandle_t vmqtt_cmd_processor_task_handle = NULL;
 
 
 /*
+Queues a response for MQTT_RESPONSE_TOPIC: {"id": <id>, "status": "Ok"/"Error", "message": "..."}
+error_msg == NULL means the command succeeded (status "Ok", empty message).
+id_valid == false means we never got an id out of the command, so "id" is sent as null.
+*/
+static void sendResponse(long id, bool id_valid, const char* error_msg) {
+    JsonDocument response;
+
+    if (id_valid) {
+        response["id"] = id;
+    } else {
+        response["id"] = nullptr;
+    }
+    response["status"]  = (error_msg == NULL) ? "Ok" : "Error";
+    response["message"] = (error_msg == NULL) ? ""   : error_msg;
+
+    char text[MQTT_STATUS_MSG_MAX_LEN];
+    serializeJson(response, text, sizeof(text));
+    publishStatus(MQTT_RESPONSE_TOPIC, text);
+}
+
+
+/*
 MQTT callback — called by PubSubClient inside mqtt.loop() when a message arrives on a subscribed topic.
-Grabs the first byte of the payload (which is the gui_msg_t command) and drops it into xCommandQueue.
+Expects JSON like {"command": 4, "id": 1}, where "command" is the gui_msg_t number.
+Drops the command + id into xmqtt_cmd_queue for vmqtt_cmd_processor_task.
+Anything that can't be turned into a command gets an "Error" response straight away.
+Command numbers the board doesn't know are caught by the default case in the command processor.
 
 Note: this runs inside vMqttTask (not a true ISR), so xQueueSend is used instead of xQueueSendFromISR.
-The ISR variant would also work here but xQueueSend is the correct choice for task context.
 */
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
-    if (length < 1) return;
+    JsonDocument doc;
+    DeserializationError err = deserializeJson(doc, payload, length);
 
-    uint8_t cmd = payload[0];
+    if (err) {
+        Serial.printf("[MQTT] Bad JSON (%s)\n", err.c_str());
+        sendResponse(0, false, "invalid json");
+        return;
+    }
 
-    // Non-blocking send — if queue is full the command is dropped
-    // (mirrors xQueueSendFromISR pattern from OPC CAN ISR, adapted for task context)
-    if (xQueueSend(xmqtt_cmd_queue, &cmd, 0) != pdTRUE) {
-        Serial.printf("[MQTT] Command queue full, dropped cmd: 0x%02X\n", cmd);
+    // The id has to be read first so every later error can echo it back
+    if (!doc["id"].is<long>()) {
+        Serial.printf("[MQTT] Command has no valid id\n");
+        sendResponse(0, false, "missing or invalid id");
+        return;
+    }
+    long id = doc["id"].as<long>();
+
+    // is<uint8_t>() is only true for a whole number from 0 to 255
+    if (!doc["command"].is<uint8_t>()) {
+        Serial.printf("[MQTT] Command id %ld has no valid command number\n", id);
+        sendResponse(id, true, "missing or invalid command");
+        return;
+    }
+
+    mqtt_cmd_t item;
+    item.cmd = doc["command"].as<uint8_t>();
+    item.id  = id;
+
+    // Non-blocking send — if queue is full the command is dropped and the GUI is told
+    if (xQueueSend(xmqtt_cmd_queue, &item, 0) != pdTRUE) {
+        Serial.printf("[MQTT] Command queue full, dropped id %ld\n", id);
+        sendResponse(id, true, "command queue full");
     }
 }
 
@@ -67,8 +116,8 @@ void vmqtt_task(void *pvParameters) {
             }
         }
 
-        // Take mutex before calling mqtt.loop() so publishStatus() from other tasks
-        // can't overlap with it (we're protecting the mqtt object)
+        // Take mutex before using the mqtt object. Nothing else takes it any more now that
+        // publishStatus() goes through a queue, but it stays as a guard for future code.
         if (xSemaphoreTake(xmqtt_mutex, pdMS_TO_TICKS(20)) == pdTRUE) {
             mqtt.loop();
 
@@ -84,7 +133,7 @@ void vmqtt_task(void *pvParameters) {
             // so a message isn't lost if the connection drops mid-way.
             mqtt_status_msg_t status_msg;
             while (xQueuePeek(xmqtt_status_queue, &status_msg, 0) == pdTRUE) {
-                if (!mqtt.publish(MQTT_STATUS_TOPIC, status_msg.text)) {
+                if (!mqtt.publish(status_msg.topic, status_msg.text)) {
                     Serial.printf("[MQTT] Status publish failed, will retry: %s\n", status_msg.text);
                     break; // leave it in the queue, try again next loop
                 }
@@ -102,14 +151,18 @@ void vmqtt_task(void *pvParameters) {
 
 
 /*
-Publishes a status string to MQTT_STATUS_TOPIC.
-Thread-safe — takes xMqttMutex before calling mqtt.publish() so this can be called
-from any task (breakwire_task, command processor, etc.).
+Queues a message for vmqtt_task to publish on the given topic.
+Safe to call from any task (command processor, ignition task, etc.) because it only
+copies the string into xmqtt_status_queue — vmqtt_task is the only task that touches
+the mqtt object. Same idea as publishBreakwire() below.
+
+Never blocks. If the queue is full the message is dropped and logged to Serial.
 */
-void publishStatus(const char* msg) {
+void publishStatus(const char* topic, const char* msg) {
     if (xmqtt_status_queue == NULL) return; // queue not created yet
 
     mqtt_status_msg_t status_msg;
+    status_msg.topic = topic;
     strncpy(status_msg.text, msg, MQTT_STATUS_MSG_MAX_LEN - 1);
     status_msg.text[MQTT_STATUS_MSG_MAX_LEN - 1] = '\0'; // strncpy doesn't terminate if msg is too long
 
@@ -138,20 +191,22 @@ This is the equivalent of vprocess_can_rx_msg + handler functions from OPC main.
 all collapsed into one switch case since we no longer need CAN class/component routing.
 */
 void vmqtt_cmd_processor_task(void *pvParameters) {
-    uint8_t cmd;
+    mqtt_cmd_t item;
 
     for (;;) {
 
         // Block until a command arrives in the queue (portMAX_DELAY = wait forever)
-        if (xQueueReceive(xmqtt_cmd_queue, &cmd, portMAX_DELAY) == pdTRUE) {
+        if (xQueueReceive(xmqtt_cmd_queue, &item, portMAX_DELAY) == pdTRUE) {
 
-            Serial.printf("[CMD] Received cmd: 0x%02X\n", cmd);
+            uint8_t cmd = item.cmd;
+
+            Serial.printf("[CMD] Received cmd: 0x%02X (id %ld)\n", cmd, item.id);
 
             EventBits_t safetyFlags = xEventGroupGetBits(xsystem_safety_flags_handle);
 
-            // Result reported back to the GUI once the command has been handled.
-            // Stays "OK" unless a case below rejects the command.
-            const char* result = "OK";
+            // Error reported back to the GUI once the command has been handled.
+            // Stays NULL (= "Ok") unless a case below rejects the command.
+            const char* error_msg = NULL;
 
             switch ((gui_msg_t)cmd) {
 
@@ -209,7 +264,7 @@ void vmqtt_cmd_processor_task(void *pvParameters) {
                         Serial.printf("[CMD] Servo 1 (fill valve) OPEN\n");
                     } else {
                         Serial.printf("[CMD] REJECTED: Servo 1 open — servos not armed\n");
-                        result = "REJECTED_SERVOS_NOT_ARMED";
+                        error_msg = "servos not armed";
                     }
                 break;
 
@@ -219,7 +274,7 @@ void vmqtt_cmd_processor_task(void *pvParameters) {
                         Serial.printf("[CMD] Servo 1 (fill valve) CLOSE\n");
                     } else {
                         Serial.printf("[CMD] REJECTED: Servo 1 close — servos not armed\n");
-                        result = "REJECTED_SERVOS_NOT_ARMED";
+                        error_msg = "servos not armed";
                     }
                 break;
 
@@ -229,7 +284,7 @@ void vmqtt_cmd_processor_task(void *pvParameters) {
                         Serial.printf("[CMD] Servo 2 (run valve) OPEN\n");
                     } else {
                         Serial.printf("[CMD] REJECTED: Servo 2 open — servos not armed\n");
-                        result = "REJECTED_SERVOS_NOT_ARMED";
+                        error_msg = "servos not armed";
                     }
                 break;
 
@@ -239,7 +294,7 @@ void vmqtt_cmd_processor_task(void *pvParameters) {
                         Serial.printf("[CMD] Servo 2 (run valve) CLOSE\n");
                     } else {
                         Serial.printf("[CMD] REJECTED: Servo 2 close — servos not armed\n");
-                        result = "REJECTED_SERVOS_NOT_ARMED";
+                        error_msg = "servos not armed";
                     }
                 break;
 
@@ -249,7 +304,7 @@ void vmqtt_cmd_processor_task(void *pvParameters) {
                         Serial.printf("[CMD] Servo 3 (run valve) OPEN\n");
                     } else {
                         Serial.printf("[CMD] REJECTED: Servo 3 open — servos not armed\n");
-                        result = "REJECTED_SERVOS_NOT_ARMED";
+                        error_msg = "servos not armed";
                     }
                 break;
 
@@ -259,7 +314,7 @@ void vmqtt_cmd_processor_task(void *pvParameters) {
                         Serial.printf("[CMD] Servo 3 (run valve) CLOSE\n");
                     } else {
                         Serial.printf("[CMD] REJECTED: Servo 3 close — servos not armed\n");
-                        result = "REJECTED_SERVOS_NOT_ARMED";
+                        error_msg = "servos not armed";
                     }
                 break;
 
@@ -271,7 +326,7 @@ void vmqtt_cmd_processor_task(void *pvParameters) {
                         Serial.printf("[CMD] IGNITER FIRED\n");
                     } else {
                         Serial.printf("[CMD] REJECTED: Igniter fire — igniter system not armed\n");
-                        result = "REJECTED_IGNITER_NOT_ARMED";
+                        error_msg = "igniter system not armed";
                     }
                 break;
 
@@ -292,15 +347,13 @@ void vmqtt_cmd_processor_task(void *pvParameters) {
 
                 default:
                     Serial.printf("[CMD] Unknown command: 0x%02X\n", cmd);
-                     result = "UNKNOWN";
+                    error_msg = "unknown command";
                 break;
 
             }//switch
-            // Tell the GUI the command was received and what happened to it,
-            // e.g. "CMD 0x0C OK" or "CMD 0x0C REJECTED_IGNITER_NOT_ARMED"
-            char status_text[MQTT_STATUS_MSG_MAX_LEN];
-            snprintf(status_text, sizeof(status_text), "CMD 0x%02X %s", cmd, result);
-            publishStatus(status_text);
+
+            // Tell the GUI what happened to the command, echoing its id
+            sendResponse(item.id, true, error_msg);
 
         }//if xQueueReceive
 
